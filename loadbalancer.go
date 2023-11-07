@@ -63,17 +63,17 @@ func (lb *RoundRobinLoadBalancer) ServeHTTP(w http.ResponseWriter, r *http.Reque
 	}
 }
 
-func main() {
+//func main() {
 
-	servers := []string{
-		"server1:8080",
-		"server2:8080",
-		"server3:8080",
-	}
-
-	lb := NewRoundRobinLoadBalancer(servers)
-
-	http.Handle("/", lb)
-	fmt.Println("Load balancer started on :8080")
-	http.ListenAndServe(":8080", nil)
-}
+//	servers := []string{
+//		"server1:8080",
+//		"server2:8080",
+//		"server3:8080",
+//	}
+//
+//	lb := NewRoundRobinLoadBalancer(servers)
+//
+//	http.Handle("/", lb)
+//	fmt.Println("Load balancer started on :8080")
+//	http.ListenAndServe(":8080", nil)
+//}
