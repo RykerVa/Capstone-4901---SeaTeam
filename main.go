@@ -1,20 +1,16 @@
 package main
 
 import (
-	"io/ioutil"
-	"log"
-	"net/http"
+    "fmt"
+    "net/http"
+    "time"
+    "io"
+    "log"
 )
-
-func main() {
-    r := &Router{}
-    http.ListenAndServe(":8000", r)
-}
 
 // Router handles incoming HTTP requests and routes them to the appropriate backend.
 type Router struct {
-    Timeout      time.Duration
-    LoadBalancer LoadBalancer
+    Timeout time.Duration
     ErrorLogger  *log.Logger
 }
 
@@ -29,7 +25,7 @@ func (sr *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
     forwardRequest(w, r, backendURL)
 }
 
-// determineBackendURL determines the backend URL based on the request.
+// determineBackendURL determines the backend URL based on the request path.
 func determineBackendURL(r *http.Request) string {
     switch r.URL.Path {
     case "/service1":
@@ -74,7 +70,7 @@ func forwardRequest(w http.ResponseWriter, r *http.Request, backendURL string) {
     }
 
     // Copy backend response body to the original response writer.
-    body, err := ioutil.ReadAll(resp.Body)
+    body, err := io.ReadAll(resp.Body)
     if err != nil {
         handleError(w, "Failed to read response body", http.StatusInternalServerError)
         return
@@ -85,6 +81,17 @@ func forwardRequest(w http.ResponseWriter, r *http.Request, backendURL string) {
 
 // handleError logs an error message and writes an HTTP error response.
 func handleError(w http.ResponseWriter, message string, statusCode int) {
-    log.Println(message)
+    // Implement the error handling logic
+    fmt.Println(message)
     http.Error(w, message, statusCode)
+}
+
+func main() {
+    r := &Router{
+        Timeout: 10 * time.Second, // Example timeout value
+    }
+
+    http.Handle("/", r)
+    fmt.Println("Server started on :8000")
+    http.ListenAndServe(":8000", r)
 }
