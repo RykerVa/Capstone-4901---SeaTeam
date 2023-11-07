@@ -1,0 +1,112 @@
+package main
+
+import (
+    "fmt"
+    "net/http"
+    "time"
+    "io"
+    "log"
+    api "MyEnvoyWork/api"
+    lb "MyEnvoyWork/loadbalancer"
+)
+
+// Router handles incoming HTTP requests and routes them to the appropriate backend.
+type Router struct {
+    Timeout time.Duration
+    ErrorLogger  *log.Logger
+    LoadBalancer *lb.RoundRobinLoadBalancer
+}
+
+
+
+// ServeHTTP implements the http.Handler interface for Router.
+func (sr *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+    backendURL := determineBackendURL(r)
+    if backendURL == "" {
+        http.NotFound(w, r)
+        return
+    }
+
+    forwardRequest(w, r, backendURL)
+}
+
+// determineBackendURL determines the backend URL based on the request path.
+func determineBackendURL(r *http.Request) string {
+    switch r.URL.Path {
+    case "/service1":
+        return "http://backend-service-1-url"
+    case "/service2":
+        return "http://backend-service-2-url"
+    default:
+        return ""
+    }
+}
+
+// forwardRequest forwards the HTTP request to the backend service.
+func forwardRequest(w http.ResponseWriter, r *http.Request, backendURL string) {
+    // Create a new HTTP request to the backend.
+    req, err := http.NewRequest(r.Method, backendURL, r.Body)
+    if err != nil {
+        handleError(w, "Failed to create new request", http.StatusInternalServerError)
+        return
+    }
+
+    // Copy original headers to the new request.
+    for key, values := range r.Header {
+        for _, value := range values {
+            req.Header.Add(key, value)
+        }
+    }
+
+    // Forward the request to the backend.
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    if err != nil {
+        handleError(w, "Failed to forward request", http.StatusInternalServerError)
+        return
+    }
+    defer resp.Body.Close()
+
+    // Copy backend response headers to the original response writer.
+    for key, values := range resp.Header {
+        for _, value := range values {
+            w.Header().Add(key, value)
+        }
+    }
+
+    // Copy backend response body to the original response writer.
+    body, err := io.ReadAll(resp.Body)
+    if err != nil {
+        handleError(w, "Failed to read response body", http.StatusInternalServerError)
+        return
+    }
+    w.WriteHeader(resp.StatusCode)
+    w.Write(body)
+}
+
+// handleError logs an error message and writes an HTTP error response.
+func handleError(w http.ResponseWriter, message string, statusCode int) {
+    // Implement the error handling logic
+    fmt.Println(message)
+    http.Error(w, message, statusCode)
+}
+
+func main() {
+    r := &Router{
+        Timeout: 10 * time.Second, // Example timeout value
+    }
+
+    // Serve the API endpoints
+    http.Handle("/", r)
+    http.HandleFunc("/health", api.HealthCheckHandler)
+    http.HandleFunc("/endpoint1", api.Endpoint1Handler)
+    http.HandleFunc("/endpoint2", api.Endpoint2Handler)
+
+    // Serve frontend files
+    fs := http.FileServer(http.Dir("./frontend"))
+    http.Handle("/static/", http.StripPrefix("/static/", fs))
+
+    fmt.Println("Server started on :8000")
+    http.ListenAndServe(":8000", nil)
+}
+
