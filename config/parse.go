@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -80,9 +81,9 @@ type StaticBootstrap struct {
 	} `yaml:"static_resources"`
 }
 
-func getYAMLdata() StaticBootstrap {
+func GetYAMLdata() StaticBootstrap {
 	var staticBootstrap StaticBootstrap
-	staticData, err := os.ReadFile("static.yaml")
+	staticData, err := os.ReadFile("config/static.yaml")
 	if err != nil {
 		fmt.Println("Error reading 'static.yaml'")
 	} else {

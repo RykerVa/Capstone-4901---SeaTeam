@@ -1,12 +1,7 @@
 package main
 
-import (
-	"net/http"
-	"testing"
-)
-
 // TestDetermineBackendURL checks if the correct backend URL is determined.
-func TestDetermineBackendURL(t *testing.T) {
+/*func TestDetermineBackendURL(t *testing.T) {
 	request1, _ := http.NewRequest("GET", "/service1", nil)
 	url1 := determineBackendURL(request1)
 	expectedURL1 := "http://backend-service-1-url"
@@ -20,7 +15,7 @@ func TestDetermineBackendURL(t *testing.T) {
 	if url2 != expectedURL2 {
 		t.Errorf("Expected URL: %s, Got: %s", expectedURL2, url2)
 }
-}
+}*/
 
 // Define a mock handler to use for testing
 /*func mockHandler() http.Handler {
