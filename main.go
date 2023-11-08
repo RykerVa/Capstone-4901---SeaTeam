@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -45,19 +46,28 @@ func (sr *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // determineBackendURL determines the backend URL based on the request.
 func (sr *Router) determineBackendURL(r *http.Request) string {
+	// Extract the URL path from the request
+	urlPath := r.URL.Path
+
 	// Extract route information from the request path and the configuration
 	routeConfig := sr.Config.StaticResources.Listeners[0].FilterChains[0].Filters[0].TypedConfig.RouteConfig
 	virtualHost := routeConfig.VirtualHosts[0]
 
 	for _, route := range virtualHost.Routes {
-		if r.URL.Path == route.Match.Prefix {
-			port := sr.Config.StaticResources.Clusters[0].LoadAssignment.Endpoints[0].LbEndpoints[0].Endpoint.Address.SocketAddress.PortValue
-			address := sr.Config.StaticResources.Clusters[0].LoadAssignment.Endpoints[0].LbEndpoints[0].Endpoint.Address.SocketAddress.Address
+		if strings.HasPrefix(urlPath, route.Match.Prefix) {
+			// Extract the part of the URL path that follows the route's prefix
+			suffix := urlPath
 
-			// Include the retrieved port and address in the backend URL
-			backendURL := fmt.Sprintf("http://%s:%d", address, port)
-			fmt.Println("Determined backend URL:", backendURL)
-			return backendURL
+			// Check if the suffix is empty or starts with a "/"
+			if suffix == "" || strings.HasPrefix(suffix, "/") {
+				port := sr.Config.StaticResources.Clusters[0].LoadAssignment.Endpoints[0].LbEndpoints[0].Endpoint.Address.SocketAddress.PortValue
+				address := sr.Config.StaticResources.Clusters[0].LoadAssignment.Endpoints[0].LbEndpoints[0].Endpoint.Address.SocketAddress.Address
+
+				// Include the retrieved port and address in the backend URL
+				backendURL := fmt.Sprintf("http://%s:%d/%s", address, port, suffix)
+				fmt.Println("Determined backend URL:", backendURL)
+				return backendURL
+			}
 		}
 	}
 
