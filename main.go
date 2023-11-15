@@ -4,6 +4,7 @@ import (
 	api "Capstone-4901---SeaTeam/api"
 	config "Capstone-4901---SeaTeam/config"
 	lb "Capstone-4901---SeaTeam/loadbalancer"
+	"strconv"
 
 	"fmt"
 	"io"
@@ -13,18 +14,17 @@ import (
 	"time"
 )
 
-
 // Router handles incoming HTTP requests and routes them to the appropriate backend.
 type Router struct {
 	Timeout      time.Duration
 	LoadBalancer *lb.RoundRobinLoadBalancer
 	ErrorLogger  *log.Logger
 	Config       config.StaticBootstrap
-	Routes map[string]http.Handler
+	Routes       map[string]http.Handler
 }
 
 // determineBackendURL determines the backend URL based on the request path.
-//Old version, just in case
+// Old version, just in case
 func determineBackendURL(r *http.Request) string {
 	switch r.URL.Path {
 	case "/service1":
@@ -37,15 +37,20 @@ func determineBackendURL(r *http.Request) string {
 }
 
 func (sr *Router) AddRoute(path string, handler http.Handler) {
-    if sr.Routes == nil {
-        sr.Routes = make(map[string]http.Handler)
-    }
-    sr.Routes[path] = handler
+	if sr.Routes == nil {
+		sr.Routes = make(map[string]http.Handler)
+	}
+	sr.Routes[path] = handler
 }
 
 // ServeHTTP implements the http.Handler interface for Router.
 func (sr *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	backendURL := sr.determineBackendURL(r)
+	endpointIndex, err := strconv.Atoi(r.URL.Query().Get("endpoint"))
+	if err != nil {
+		http.Error(w, "Invalid endpoint index", http.StatusBadRequest)
+		return
+	}
+	backendURL := sr.determineBackendURL(r, endpointIndex)
 	if backendURL == "" {
 		http.NotFound(w, r)
 		return
@@ -55,7 +60,7 @@ func (sr *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // determineBackendURL determines the backend URL based on the request.
-func (sr *Router) determineBackendURL(r *http.Request) string {
+func (sr *Router) determineBackendURL(r *http.Request, endpointIndex int) string {
 	// Extract the URL path from the request
 	urlPath := r.URL.Path
 
@@ -70,8 +75,8 @@ func (sr *Router) determineBackendURL(r *http.Request) string {
 
 			// Check if the suffix is empty or starts with a "/"
 			if suffix == "" || strings.HasPrefix(suffix, "/") {
-				port := sr.Config.StaticResources.Clusters[0].LoadAssignment.Endpoints[0].LbEndpoints[0].Endpoint.Address.SocketAddress.PortValue
-				address := sr.Config.StaticResources.Clusters[0].LoadAssignment.Endpoints[0].LbEndpoints[0].Endpoint.Address.SocketAddress.Address
+				port := sr.Config.StaticResources.Clusters[0].LoadAssignment.Endpoints[0].LbEndpoints[endpointIndex].Endpoint.Address.SocketAddress.PortValue
+				address := sr.Config.StaticResources.Clusters[0].LoadAssignment.Endpoints[0].LbEndpoints[endpointIndex].Endpoint.Address.SocketAddress.Address
 
 				// Include the retrieved port and address in the backend URL
 				backendURL := fmt.Sprintf("http://%s:%d/%s", address, port, suffix)

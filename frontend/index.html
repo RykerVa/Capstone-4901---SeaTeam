@@ -14,8 +14,10 @@
 
     <nav>
         <ul>
-            <li><a href="/endpoint1">Go to Endpoint 1</a></li>
-            <li><a href="/endpoint2">Go to Endpoint 2</a></li>
+            <!-- A query variable is passed to each endpoint that is used by determineBackendURL. The actual url that is used is everything before the '?', in this case just '/'-->
+            <li><a href="/?endpoint=0">Go to Endpoint 1</a></li>
+            <li><a href="/?endpoint=1">Go to Endpoint 2</a></li>
+            <li><a href="/?endpoint=2">Go to Endpoint 3</a></li>
             <li><a href="/health">Health Check</a></li>
             <li><a href="/endpoint3">Endpoint 3</a></li>
             <li><a href="/new-feature">New Feature</a></li>
