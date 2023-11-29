@@ -3,6 +3,7 @@ package main
 import (
 	api "Capstone-4901---SeaTeam/api"
 	config "Capstone-4901---SeaTeam/config"
+	"Capstone-4901---SeaTeam/loadbalancer"
 	lb "Capstone-4901---SeaTeam/loadbalancer"
 	"strconv"
 
@@ -45,18 +46,32 @@ func (sr *Router) AddRoute(path string, handler http.Handler) {
 
 // ServeHTTP implements the http.Handler interface for Router.
 func (sr *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	endpointIndex, err := strconv.Atoi(r.URL.Query().Get("endpoint"))
-	if err != nil {
-		http.Error(w, "Invalid endpoint index", http.StatusBadRequest)
-		return
+	// Check if the endpoint query parameter is present
+	endpointIndexStr := r.URL.Query().Get("endpoint")
+	if endpointIndexStr != "lb" {
+		// If an endpoint is specified, use it
+		endpointIndex, err := strconv.Atoi(endpointIndexStr)
+		if err != nil {
+			http.Error(w, "Invalid endpoint index", http.StatusBadRequest)
+			return
+		}
+		backendURL := sr.determineBackendURL(r, endpointIndex)
+		if backendURL == "" {
+			http.NotFound(w, r)
+			return
+		}
+		forwardRequest(w, r, backendURL)
+	} else if endpointIndexStr == "lb" {
+		fmt.Println("No endpoint given, loadbalancer deciding")
+		// If no endpoint is specified, use the load balancer
+		backendURL := sr.LoadBalancer.NextEndpoint()
+		fmt.Println("lb determined backend URL:", backendURL)
+		if backendURL == "" {
+			http.NotFound(w, r)
+			return
+		}
+		forwardRequest(w, r, backendURL)
 	}
-	backendURL := sr.determineBackendURL(r, endpointIndex)
-	if backendURL == "" {
-		http.NotFound(w, r)
-		return
-	}
-
-	forwardRequest(w, r, backendURL)
 }
 
 // determineBackendURL determines the backend URL based on the request.
@@ -139,10 +154,20 @@ func handleError(w http.ResponseWriter, message string, statusCode int) {
 }
 
 func main() {
-	configuration := config.GetYAMLdata()
+	configuration, backendServers := config.GetYAMLdata()
+	// grabbing all endpoints from the config
+	var backendAddresses []string
+	for _, server := range backendServers {
+		backendAddresses = append(backendAddresses, fmt.Sprintf("http://%s:%d/", server.Address, server.Port))
+	}
+
+	//create loadbalancer with grabbed endpoints
+	loadBalancer := loadbalancer.NewRoundRobinLoadBalancer(backendAddresses)
+
 	r := &Router{
-		Timeout: 10 * time.Second, // Example timeout value
-		Config:  configuration,
+		Timeout:      10 * time.Second, // Example timeout value
+		Config:       configuration,
+		LoadBalancer: loadBalancer,
 	}
 	// Serve the API endpoints
 	http.Handle("/", r)

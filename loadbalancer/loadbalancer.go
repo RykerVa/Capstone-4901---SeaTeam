@@ -3,25 +3,25 @@
 package loadbalancer
 
 import (
-    "io"
-    "net/http"
-    "sync"
+	"io"
+	"net/http"
+	"sync"
 )
 
 type RoundRobinLoadBalancer struct {
-    servers   []string
-    current   int
-    mutex     sync.Mutex
-    serverLen int
+	servers   []string
+	current   int
+	mutex     sync.Mutex
+	serverLen int
 }
 
 func NewRoundRobinLoadBalancer(servers []string) *RoundRobinLoadBalancer {
-    return &RoundRobinLoadBalancer{
-        servers:   servers,
-        current:   0,
-        mutex:     sync.Mutex{},
-        serverLen: len(servers),
-    }
+	return &RoundRobinLoadBalancer{
+		servers:   servers,
+		current:   0,
+		mutex:     sync.Mutex{},
+		serverLen: len(servers),
+	}
 }
 
 func (lb *RoundRobinLoadBalancer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -62,3 +62,13 @@ func (lb *RoundRobinLoadBalancer) ServeHTTP(w http.ResponseWriter, r *http.Reque
 	}
 }
 
+// NextEndpoint returns the next backend server based on round-robin logic.
+func (lb *RoundRobinLoadBalancer) NextEndpoint() string {
+	lb.mutex.Lock()
+	defer lb.mutex.Unlock()
+
+	server := lb.servers[lb.current]
+	lb.current = (lb.current + 1) % lb.serverLen
+
+	return server
+}

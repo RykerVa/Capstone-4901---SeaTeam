@@ -81,8 +81,15 @@ type StaticBootstrap struct {
 	} `yaml:"static_resources"`
 }
 
-func GetYAMLdata() StaticBootstrap {
+type BackendServer struct {
+	Address string
+	Port    int
+}
+
+func GetYAMLdata() (StaticBootstrap, []BackendServer) {
 	var staticBootstrap StaticBootstrap
+	var backendServers []BackendServer
+
 	staticData, err := os.ReadFile("config/static.yaml")
 	if err != nil {
 		fmt.Println("Error reading 'static.yaml'")
@@ -91,7 +98,20 @@ func GetYAMLdata() StaticBootstrap {
 		if err != nil {
 			fmt.Println("Error unmarshaling 'listeners.yaml'")
 		}
+
+		// Extract backend server information from the configuration
+		for _, cluster := range staticBootstrap.StaticResources.Clusters {
+			for _, endpoint := range cluster.LoadAssignment.Endpoints {
+				for _, lbEndpoint := range endpoint.LbEndpoints {
+					server := BackendServer{
+						Address: lbEndpoint.Endpoint.Address.SocketAddress.Address,
+						Port:    int(lbEndpoint.Endpoint.Address.SocketAddress.PortValue),
+					}
+					backendServers = append(backendServers, server)
+				}
+			}
+		}
 	}
 
-	return staticBootstrap
+	return staticBootstrap, backendServers
 }
