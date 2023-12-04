@@ -72,3 +72,47 @@ func (lb *RoundRobinLoadBalancer) NextEndpoint() string {
 
 	return server
 }
+
+func (lb *RoundRobinLoadBalancer) UpdateEndpoints(newServers []string) {
+	lb.mutex.Lock()
+	defer lb.mutex.Unlock()
+
+	// Create a map to check for existing servers
+	existingServers := make(map[string]bool)
+	for _, server := range lb.servers {
+		existingServers[server] = true
+	}
+
+	// Remove servers that are no longer present
+	var updatedServers []string
+	for _, server := range lb.servers {
+		if existingServers[server] && contains(newServers, server) {
+			updatedServers = append(updatedServers, server)
+		}
+	}
+
+	// Add new servers that are not already present
+	for _, server := range newServers {
+		if !existingServers[server] {
+			updatedServers = append(updatedServers, server)
+		}
+	}
+
+	// Update the list of servers and length
+	lb.servers = updatedServers
+	lb.serverLen = len(updatedServers)
+
+	// If the current index is out of bounds, reset to 0
+	if lb.current >= lb.serverLen {
+		lb.current = 0
+	}
+}
+
+func contains(servers []string, target string) bool {
+	for _, server := range servers {
+		if server == target {
+			return true
+		}
+	}
+	return false
+}

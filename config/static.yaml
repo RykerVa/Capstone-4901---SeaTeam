@@ -51,3 +51,10 @@ static_resources:
                 socket_address:
                   address: 127.0.0.3
                   port_value: 9876
+          - endpoint:
+              address:
+                socket_address:
+                  address: 127.0.0.4
+                  port_value: 5544
+
+

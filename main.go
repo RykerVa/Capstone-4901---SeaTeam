@@ -5,7 +5,10 @@ import (
 	config "Capstone-4901---SeaTeam/config"
 	"Capstone-4901---SeaTeam/loadbalancer"
 	lb "Capstone-4901---SeaTeam/loadbalancer"
+	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 
 	"fmt"
 	"io"
@@ -13,6 +16,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 // Router handles incoming HTTP requests and routes them to the appropriate backend.
@@ -153,8 +158,49 @@ func handleError(w http.ResponseWriter, message string, statusCode int) {
 	http.Error(w, message, statusCode)
 }
 
+func watchConfigFile(filePath string, reloadFunc func()) {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		fmt.Println("Error creating file watcher:", err)
+		return
+	}
+	defer watcher.Close()
+
+	done := make(chan bool)
+	go func() {
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+				if event.Op&fsnotify.Write == fsnotify.Write {
+					fmt.Println("Config file modified. Reloading...")
+					reloadFunc()
+				}
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				fmt.Println("Error watching config file:", err)
+			}
+		}
+	}()
+
+	err = watcher.Add(filePath)
+	if err != nil {
+		fmt.Println("Error watching config file:", err)
+		return
+	}
+
+	<-done
+}
+
 func main() {
-	configuration, backendServers := config.GetYAMLdata()
+
+	// Initial config load
+	configuration, backendServers := loadConfig()
+
 	// grabbing all endpoints from the config
 	var backendAddresses []string
 	for _, server := range backendServers {
@@ -169,6 +215,16 @@ func main() {
 		Config:       configuration,
 		LoadBalancer: loadBalancer,
 	}
+
+	// Watch for changes in the config file
+	go watchConfigFile("config/static.yaml", func() {
+		configuration, backendServers = loadConfig()
+		var updatedBackendAddresses []string
+		for _, server := range backendServers {
+			updatedBackendAddresses = append(updatedBackendAddresses, fmt.Sprintf("http://%s:%d/", server.Address, server.Port))
+		}
+		r.LoadBalancer.UpdateEndpoints(updatedBackendAddresses)
+	})
 	// Serve the API endpoints
 	http.Handle("/", r)
 	http.HandleFunc("/health", api.HealthCheckHandler)
@@ -181,4 +237,18 @@ func main() {
 
 	fmt.Println("Server started on :8000")
 	http.ListenAndServe(":8000", nil)
+
+	// Wait for termination signals
+	signalChannel := make(chan os.Signal, 1)
+	signal.Notify(signalChannel, syscall.SIGINT, syscall.SIGTERM)
+	<-signalChannel
+}
+
+func loadConfig() (config.StaticBootstrap, []config.BackendServer) {
+	// Load configuration from file
+	configuration, servers := config.GetYAMLdata()
+	// Update existing structs using atomic operations or mutexes
+	// ...
+	fmt.Println("Config reloaded successfully")
+	return configuration, servers
 }

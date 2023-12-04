@@ -220,6 +220,70 @@ func main() {
 		http.ListenAndServe(":9876", mux3)
 	}()
 
+	//Handler for the fourth endpoint (listening on port 5544)
+	mux4 := http.NewServeMux()
+	mux4.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		html := `
+			<!DOCTYPE html>
+			<html lang="en">
+			<head>
+				<meta charset="UTF-8">
+				<meta name="viewport" content="width=device-width, initial-scale=1.0">
+				<title>Envoy Router</title>
+				<link rel="stylesheet" type="text/css" href="styles.css">
+				<style>
+					body {
+						font-family: Arial, sans-serif;
+						background-color: #f0f0f0;
+						color: #333;
+						margin: 20px;
+					}
+
+					h1 {
+						color: #3498db;
+					}
+
+					button {
+						display: block;
+						padding: 15px 40px;
+						color: #fff;
+						text-decoration: none;
+						background-color: #7851A9;
+						border-radius: 8px;
+						transition: background-color 0.3s, color 0.3s;
+						border: none; /* Remove default button border */
+						cursor: pointer;
+					}
+
+					button:hover {
+						background-color: #663399;
+					}
+				</style>
+			</head>
+			<body>
+				<h1>Response from mockbackend 4 - Root Path</h1>
+				<button onclick="sendNewRequest()">New Request</button>
+
+				<script>
+					function sendNewRequest() {
+						// You can customize this URL based on your requirements
+						window.location.href = "/?endpoint=lb";
+					}
+				</script>
+			</body>
+			</html>
+		`
+		fmt.Fprint(w, html)
+	})
+	mux4.HandleFunc("/service4", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "Response from mockbackend 4 - Service4")
+	})
+
+	// Start the server on port 5544
+	go func() {
+		http.ListenAndServe(":5544", mux4)
+	}()
+
 	// Add more handlers for additional endpoints...
 	// Repeat the pattern with different ports and handlers as needed.
 
