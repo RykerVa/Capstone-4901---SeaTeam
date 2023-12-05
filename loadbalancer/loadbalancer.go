@@ -8,6 +8,13 @@ import (
 	"sync"
 )
 
+// LoadBalancer is the interface that defines the methods for a load balancer.
+type LoadBalancer interface {
+	ServeHTTP(w http.ResponseWriter, r *http.Request)
+	NextEndpoint() string
+	UpdateEndpoints(newServers []string)
+}
+
 type RoundRobinLoadBalancer struct {
 	servers   []string
 	current   int

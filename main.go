@@ -23,7 +23,7 @@ import (
 // Router handles incoming HTTP requests and routes them to the appropriate backend.
 type Router struct {
 	Timeout      time.Duration
-	LoadBalancer *lb.RoundRobinLoadBalancer
+	LoadBalancer lb.LoadBalancer
 	ErrorLogger  *log.Logger
 	Config       config.StaticBootstrap
 	Routes       map[string]http.Handler
@@ -70,6 +70,15 @@ func (sr *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("No endpoint given, loadbalancer deciding")
 		// If no endpoint is specified, use the load balancer
 		backendURL := sr.LoadBalancer.NextEndpoint()
+		// Print the type of the load balancer
+		switch sr.LoadBalancer.(type) {
+		case *loadbalancer.RoundRobinLoadBalancer:
+			fmt.Println("Load Balancer Type: Round Robin")
+		case *loadbalancer.LeastConnectionsLoadBalancer:
+			fmt.Println("Load Balancer Type: Least Connections")
+		default:
+			fmt.Println("Unknown Load Balancer Type")
+		}
 		fmt.Println("lb determined backend URL:", backendURL)
 		if backendURL == "" {
 			http.NotFound(w, r)
@@ -201,6 +210,8 @@ func main() {
 	// Initial config load
 	configuration, backendServers := loadConfig()
 
+	lbPolicy := configuration.StaticResources.Clusters[0].LbPolicy
+
 	// grabbing all endpoints from the config
 	var backendAddresses []string
 	for _, server := range backendServers {
@@ -208,7 +219,16 @@ func main() {
 	}
 
 	//create loadbalancer with grabbed endpoints
-	loadBalancer := loadbalancer.NewRoundRobinLoadBalancer(backendAddresses)
+	var loadBalancer loadbalancer.LoadBalancer
+	switch lbPolicy {
+	case "ROUND_ROBIN":
+		loadBalancer = loadbalancer.NewRoundRobinLoadBalancer(backendAddresses)
+	case "LEAST_CONNECTIONS":
+		loadBalancer = loadbalancer.NewLeastConnectionsLoadBalancer(backendAddresses)
+	default:
+		// Default to Round Robin if lbPolicy is not recognized
+		loadBalancer = loadbalancer.NewRoundRobinLoadBalancer(backendAddresses)
+	}
 
 	r := &Router{
 		Timeout:      10 * time.Second, // Example timeout value
@@ -223,7 +243,22 @@ func main() {
 		for _, server := range backendServers {
 			updatedBackendAddresses = append(updatedBackendAddresses, fmt.Sprintf("http://%s:%d/", server.Address, server.Port))
 		}
+
+		var updatedLoadBalancer loadbalancer.LoadBalancer
+		switch lbPolicy := configuration.StaticResources.Clusters[0].LbPolicy; lbPolicy {
+		case "ROUND_ROBIN":
+			updatedLoadBalancer = loadbalancer.NewRoundRobinLoadBalancer(updatedBackendAddresses)
+		case "LEAST_CONNECTIONS":
+			updatedLoadBalancer = loadbalancer.NewLeastConnectionsLoadBalancer(updatedBackendAddresses)
+		default:
+			// Default to Round Robin if lbPolicy is not recognized
+			updatedLoadBalancer = loadbalancer.NewRoundRobinLoadBalancer(updatedBackendAddresses)
+		}
+
+		// Update the Router's load balancer
+		r.LoadBalancer = updatedLoadBalancer
 		r.LoadBalancer.UpdateEndpoints(updatedBackendAddresses)
+
 	})
 	// Serve the API endpoints
 	http.Handle("/", r)

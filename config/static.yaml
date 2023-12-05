@@ -31,7 +31,7 @@ static_resources:
     - name: some_service
       connect_timeout: 0.25s
       type: STATIC
-      lb_policy: ROUND_ROBIN
+      lb_policy: LEAST_CONNECTIONS
       load_assignment:
         cluster_name: some_service
         endpoints:
