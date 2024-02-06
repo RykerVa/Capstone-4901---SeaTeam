@@ -21,6 +21,13 @@ type Router struct {
 	Routes       map[string]http.Handler
 }
 
+// handleError sends an error message with the specified status code to the client.
+func handleError(w http.ResponseWriter, message string, statusCode int) {
+	// Implement the error handling logic
+	fmt.Println(message)
+	http.Error(w, message, statusCode)
+}
+
 func (sr *Router) AddRoute(path string, handler http.Handler) {
 	if sr.Routes == nil {
 		sr.Routes = make(map[string]http.Handler)
@@ -83,8 +90,8 @@ func (sr *Router) determineBackendURL(r *http.Request, endpointIndex int) string
 
 	return ""
 }
-//Good ^
 
+//Good ^
 
 // forwardRequest forwards the HTTP request to the backend service.
 func forwardRequest(w http.ResponseWriter, r *http.Request, backendURL string) {
