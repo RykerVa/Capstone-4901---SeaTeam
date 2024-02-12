@@ -96,7 +96,6 @@ func (sr *Router) determineBackendURL(r *http.Request, endpointIndex int) string
 	// Extract route information from the request path and the configuration
 	routeConfig := sr.Config.StaticResources.Listeners[0].FilterChains[0].Filters[0].TypedConfig.RouteConfig
 	virtualHost := routeConfig.VirtualHosts[0]
-
 	for _, route := range virtualHost.Routes {
 		if strings.HasPrefix(urlPath, route.Match.Prefix) {
 			// Extract the part of the URL path that follows the route's prefix
@@ -209,6 +208,14 @@ func main() {
 
 	// Initial config load
 	configuration, backendServers := loadConfig()
+	// Check if StaticBootstrap is empty
+	if configuration.Admin.Address.SocketAddress.Address == "" || configuration.Admin.Address.SocketAddress.PortValue == 0 {
+		log.Fatal("Error loading configuration. Problem with 'static.yaml'. Does it exist? Are needed fields completed?")
+	}
+	// Check if BackendServer slice is empty
+	if len(backendServers) == 0 {
+		log.Fatal("No backend servers found. Check your configuration.")
+	}
 
 	lbPolicy := configuration.StaticResources.Clusters[0].LbPolicy
 
