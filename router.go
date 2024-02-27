@@ -28,6 +28,12 @@ func (sr *Router) AddRoute(path string, handler http.Handler) {
 	sr.Routes[path] = handler
 }
 
+func handleError(w http.ResponseWriter, message string, statusCode int) {
+	// Implement the error handling logic
+	fmt.Println(message)
+	http.Error(w, message, statusCode)
+}
+
 // ServeHTTP implements the http.Handler interface for Router.
 func (sr *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	endpointIndexStr := r.URL.Query().Get("endpoint")

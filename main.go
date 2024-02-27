@@ -3,7 +3,7 @@ package main
 import (
 	api "Capstone-4901---SeaTeam/api"
 	config "Capstone-4901---SeaTeam/config"
-	"Capstone-4901---SeaTeam/loadbalancer"
+	loadbalancer "Capstone-4901---SeaTeam/loadbalancer"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+
 )
 
 func main() {
@@ -92,12 +93,11 @@ func main() {
 }
 
 func loadConfig() (config.StaticBootstrap, []config.BackendServer) {
-	// Load configuration from file
-	configuration, servers := config.GetYAMLdata()
-	// Update existing structs using atomic operations or mutexes
-	// ...
-	fmt.Println("Config reloaded successfully")
-	return configuration, servers
+    // Load configuration from file
+    configuration, servers := config.GetYAMLdata()
+    fmt.Println("Configuration loaded successfully:", configuration)
+    fmt.Println("Backend servers:", servers)
+    return configuration, servers
 }
 
 func watchConfigFile(filePath string, reloadFunc func()) {
