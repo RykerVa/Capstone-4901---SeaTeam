@@ -3,7 +3,12 @@ package main
 import (
 	api "Capstone-4901---SeaTeam/api"
 	config "Capstone-4901---SeaTeam/config"
+	"Capstone-4901---SeaTeam/loadbalancer"
 	lb "Capstone-4901---SeaTeam/loadbalancer"
+	"os"
+	"os/signal"
+	"strconv"
+	"syscall"
 
 	"fmt"
 	"io"
@@ -11,20 +16,21 @@ import (
 	"net/http"
 	"strings"
 	"time"
-)
 
+	"github.com/fsnotify/fsnotify"
+)
 
 // Router handles incoming HTTP requests and routes them to the appropriate backend.
 type Router struct {
 	Timeout      time.Duration
-	LoadBalancer *lb.RoundRobinLoadBalancer
+	LoadBalancer lb.LoadBalancer
 	ErrorLogger  *log.Logger
 	Config       config.StaticBootstrap
-	Routes map[string]http.Handler
+	Routes       map[string]http.Handler
 }
 
 // determineBackendURL determines the backend URL based on the request path.
-//Old version, just in case
+// Old version, just in case
 func determineBackendURL(r *http.Request) string {
 	switch r.URL.Path {
 	case "/service1":
@@ -37,32 +43,59 @@ func determineBackendURL(r *http.Request) string {
 }
 
 func (sr *Router) AddRoute(path string, handler http.Handler) {
-    if sr.Routes == nil {
-        sr.Routes = make(map[string]http.Handler)
-    }
-    sr.Routes[path] = handler
+	if sr.Routes == nil {
+		sr.Routes = make(map[string]http.Handler)
+	}
+	sr.Routes[path] = handler
 }
 
 // ServeHTTP implements the http.Handler interface for Router.
 func (sr *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	backendURL := sr.determineBackendURL(r)
-	if backendURL == "" {
-		http.NotFound(w, r)
-		return
+	// Check if the endpoint query parameter is present
+	endpointIndexStr := r.URL.Query().Get("endpoint")
+	if endpointIndexStr != "lb" {
+		// If an endpoint is specified, use it
+		endpointIndex, err := strconv.Atoi(endpointIndexStr)
+		if err != nil {
+			http.Error(w, "Invalid endpoint index", http.StatusBadRequest)
+			return
+		}
+		backendURL := sr.determineBackendURL(r, endpointIndex)
+		if backendURL == "" {
+			http.NotFound(w, r)
+			return
+		}
+		forwardRequest(w, r, backendURL)
+	} else if endpointIndexStr == "lb" {
+		fmt.Println("No endpoint given, loadbalancer deciding")
+		// If no endpoint is specified, use the load balancer
+		backendURL := sr.LoadBalancer.NextEndpoint()
+		// Print the type of the load balancer
+		switch sr.LoadBalancer.(type) {
+		case *loadbalancer.RoundRobinLoadBalancer:
+			fmt.Println("Load Balancer Type: Round Robin")
+		case *loadbalancer.LeastConnectionsLoadBalancer:
+			fmt.Println("Load Balancer Type: Least Connections")
+		default:
+			fmt.Println("Unknown Load Balancer Type")
+		}
+		fmt.Println("lb determined backend URL:", backendURL)
+		if backendURL == "" {
+			http.NotFound(w, r)
+			return
+		}
+		forwardRequest(w, r, backendURL)
 	}
-
-	forwardRequest(w, r, backendURL)
 }
 
 // determineBackendURL determines the backend URL based on the request.
-func (sr *Router) determineBackendURL(r *http.Request) string {
+func (sr *Router) determineBackendURL(r *http.Request, endpointIndex int) string {
 	// Extract the URL path from the request
 	urlPath := r.URL.Path
 
 	// Extract route information from the request path and the configuration
 	routeConfig := sr.Config.StaticResources.Listeners[0].FilterChains[0].Filters[0].TypedConfig.RouteConfig
 	virtualHost := routeConfig.VirtualHosts[0]
-
 	for _, route := range virtualHost.Routes {
 		if strings.HasPrefix(urlPath, route.Match.Prefix) {
 			// Extract the part of the URL path that follows the route's prefix
@@ -70,8 +103,8 @@ func (sr *Router) determineBackendURL(r *http.Request) string {
 
 			// Check if the suffix is empty or starts with a "/"
 			if suffix == "" || strings.HasPrefix(suffix, "/") {
-				port := sr.Config.StaticResources.Clusters[0].LoadAssignment.Endpoints[0].LbEndpoints[0].Endpoint.Address.SocketAddress.PortValue
-				address := sr.Config.StaticResources.Clusters[0].LoadAssignment.Endpoints[0].LbEndpoints[0].Endpoint.Address.SocketAddress.Address
+				port := sr.Config.StaticResources.Clusters[0].LoadAssignment.Endpoints[0].LbEndpoints[endpointIndex].Endpoint.Address.SocketAddress.PortValue
+				address := sr.Config.StaticResources.Clusters[0].LoadAssignment.Endpoints[0].LbEndpoints[endpointIndex].Endpoint.Address.SocketAddress.Address
 
 				// Include the retrieved port and address in the backend URL
 				backendURL := fmt.Sprintf("http://%s:%d/%s", address, port, suffix)
@@ -133,12 +166,107 @@ func handleError(w http.ResponseWriter, message string, statusCode int) {
 	http.Error(w, message, statusCode)
 }
 
-func main() {
-	configuration := config.GetYAMLdata()
-	r := &Router{
-		Timeout: 10 * time.Second, // Example timeout value
-		Config:  configuration,
+func watchConfigFile(filePath string, reloadFunc func()) {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		fmt.Println("Error creating file watcher:", err)
+		return
 	}
+	defer watcher.Close()
+
+	done := make(chan bool)
+	go func() {
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+				if event.Op&fsnotify.Write == fsnotify.Write {
+					fmt.Println("Config file modified. Reloading...")
+					reloadFunc()
+				}
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				fmt.Println("Error watching config file:", err)
+			}
+		}
+	}()
+
+	err = watcher.Add(filePath)
+	if err != nil {
+		fmt.Println("Error watching config file:", err)
+		return
+	}
+
+	<-done
+}
+
+func main() {
+
+	// Initial config load
+	configuration, backendServers := loadConfig()
+	// Check if StaticBootstrap is empty
+	if configuration.Admin.Address.SocketAddress.Address == "" || configuration.Admin.Address.SocketAddress.PortValue == 0 {
+		log.Fatal("Error loading configuration. Problem with 'static.yaml'. Does it exist? Are needed fields completed?")
+	}
+	// Check if BackendServer slice is empty
+	if len(backendServers) == 0 {
+		log.Fatal("No backend servers found. Check your configuration.")
+	}
+
+	lbPolicy := configuration.StaticResources.Clusters[0].LbPolicy
+
+	// grabbing all endpoints from the config
+	var backendAddresses []string
+	for _, server := range backendServers {
+		backendAddresses = append(backendAddresses, fmt.Sprintf("http://%s:%d/", server.Address, server.Port))
+	}
+
+	//create loadbalancer with grabbed endpoints
+	var loadBalancer loadbalancer.LoadBalancer
+	switch lbPolicy {
+	case "ROUND_ROBIN":
+		loadBalancer = loadbalancer.NewRoundRobinLoadBalancer(backendAddresses)
+	case "LEAST_CONNECTIONS":
+		loadBalancer = loadbalancer.NewLeastConnectionsLoadBalancer(backendAddresses)
+	default:
+		// Default to Round Robin if lbPolicy is not recognized
+		loadBalancer = loadbalancer.NewRoundRobinLoadBalancer(backendAddresses)
+	}
+
+	r := &Router{
+		Timeout:      10 * time.Second, // Example timeout value
+		Config:       configuration,
+		LoadBalancer: loadBalancer,
+	}
+
+	// Watch for changes in the config file
+	go watchConfigFile("config/static.yaml", func() {
+		configuration, backendServers = loadConfig()
+		var updatedBackendAddresses []string
+		for _, server := range backendServers {
+			updatedBackendAddresses = append(updatedBackendAddresses, fmt.Sprintf("http://%s:%d/", server.Address, server.Port))
+		}
+
+		var updatedLoadBalancer loadbalancer.LoadBalancer
+		switch lbPolicy := configuration.StaticResources.Clusters[0].LbPolicy; lbPolicy {
+		case "ROUND_ROBIN":
+			updatedLoadBalancer = loadbalancer.NewRoundRobinLoadBalancer(updatedBackendAddresses)
+		case "LEAST_CONNECTIONS":
+			updatedLoadBalancer = loadbalancer.NewLeastConnectionsLoadBalancer(updatedBackendAddresses)
+		default:
+			// Default to Round Robin if lbPolicy is not recognized
+			updatedLoadBalancer = loadbalancer.NewRoundRobinLoadBalancer(updatedBackendAddresses)
+		}
+
+		// Update the Router's load balancer
+		r.LoadBalancer = updatedLoadBalancer
+		r.LoadBalancer.UpdateEndpoints(updatedBackendAddresses)
+
+	})
 	// Serve the API endpoints
 	http.Handle("/", r)
 	http.HandleFunc("/health", api.HealthCheckHandler)
@@ -151,4 +279,18 @@ func main() {
 
 	fmt.Println("Server started on :8000")
 	http.ListenAndServe(":8000", nil)
+
+	// Wait for termination signals
+	signalChannel := make(chan os.Signal, 1)
+	signal.Notify(signalChannel, syscall.SIGINT, syscall.SIGTERM)
+	<-signalChannel
+}
+
+func loadConfig() (config.StaticBootstrap, []config.BackendServer) {
+	// Load configuration from file
+	configuration, servers := config.GetYAMLdata()
+	// Update existing structs using atomic operations or mutexes
+	// ...
+	fmt.Println("Config reloaded successfully")
+	return configuration, servers
 }
