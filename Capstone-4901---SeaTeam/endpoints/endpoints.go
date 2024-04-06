@@ -27,15 +27,15 @@ var (
 		},
 	)
 
+	totalRequests = prometheus.NewCounter(
+        prometheus.CounterOpts{
+            Name: "total_requests",
+            Help: "Total number of requests across all endpoints.",
+        },
+    )
+
 	// Mutex to ensure safe access to connectionCount
 	mu sync.Mutex
-	// Total number of connections
-	connectionCount = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "total_connections",
-			Help: "Total number of connections across all endpoints.",
-		},
-	)
 )
 
 func CustomPrometheusHandler() http.Handler {
@@ -46,7 +46,7 @@ func CustomPrometheusHandler() http.Handler {
 		// Register only the metrics you created
 		filteredRegistry.MustRegister(endpointRequests)
 		filteredRegistry.MustRegister(totalEndpoints)
-		filteredRegistry.MustRegister(connectionCount)
+		filteredRegistry.MustRegister(totalRequests)
 
 		// Serve metrics from the filtered registry
 		h := promhttp.HandlerFor(filteredRegistry, promhttp.HandlerOpts{})
@@ -60,23 +60,12 @@ func incrementTotalEndpoints(count int) {
 	totalEndpoints.Set(float64(count))
 }
 
-func IncrementConnectionCount() {
-	mu.Lock()
-	defer mu.Unlock()
-	connectionCount.Inc()
-}
-
-func DecrementConnectionCount() {
-	mu.Lock()
-	defer mu.Unlock()
-	connectionCount.Dec()
-}
-
 func main() {
 	// Handler for the first endpoint (listening on port 1234)
 	mux1 := http.NewServeMux()
 	mux1.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		endpointRequests.WithLabelValues("endpoint_1").Inc()
+		totalRequests.Inc()
 		html := `
 			<!DOCTYPE html>
 			<html lang="en">
@@ -164,6 +153,7 @@ func main() {
 	mux2 := http.NewServeMux()
 	mux2.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		endpointRequests.WithLabelValues("endpoint_2").Inc()
+		totalRequests.Inc()
 		html := `
 			<!DOCTYPE html>
 			<html lang="en">
@@ -229,6 +219,7 @@ func main() {
 	mux3 := http.NewServeMux()
 	mux3.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		endpointRequests.WithLabelValues("endpoint_3").Inc()
+		totalRequests.Inc()
 		html := `
 			<!DOCTYPE html>
 			<html lang="en">
@@ -294,6 +285,7 @@ func main() {
 	mux4 := http.NewServeMux()
 	mux4.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		endpointRequests.WithLabelValues("endpoint_4").Inc()
+		totalRequests.Inc()
 		html := `
 			<!DOCTYPE html>
 			<html lang="en">
@@ -357,7 +349,7 @@ func main() {
 
 	go func() {
 		http.Handle("/metrics", CustomPrometheusHandler())
-		http.ListenAndServe(":8080", nil)
+		http.ListenAndServe(":8081", nil)
 	}()
 
 	incrementTotalEndpoints(4)
