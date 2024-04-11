@@ -7,7 +7,7 @@ COPY go.sum ./
 
 RUN go mod download && go mod verify
 
-COPY endpoints/endpoints.go ./
+COPY . .
 
 RUN go build -o /envoyrouter
 
