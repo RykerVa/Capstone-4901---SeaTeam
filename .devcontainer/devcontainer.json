@@ -1,0 +1,12 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+{
+	"name": "Go",
+	"build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+	"forwardPorts": [
+		8080,
+		8081
+	]
+}
