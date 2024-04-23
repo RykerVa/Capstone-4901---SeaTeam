@@ -28,11 +28,11 @@ var (
 	)
 
 	totalRequests = prometheus.NewCounter(
-        prometheus.CounterOpts{
-            Name: "total_requests",
-            Help: "Total number of requests across all endpoints.",
-        },
-    )
+		prometheus.CounterOpts{
+			Name: "total_requests",
+			Help: "Total number of requests across all endpoints.",
+		},
+	)
 
 	// Mutex to ensure safe access to connectionCount
 	mu sync.Mutex
