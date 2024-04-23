@@ -4,8 +4,13 @@ services:
     ports:
       - 8000:8000
       - 8081:8081
+      - 1234:1234
+      - 5678:5678
+      - 9876:9876
+      - 5544:5544
     volumes:
       - ./app/config:/config
+      - ./app/frontend:/frontend
   
   prometheus:
     image: prom/prometheus:latest
@@ -32,3 +37,12 @@ services:
     restart: unless-stopped
     expose:
       - 9100
+
+  zipkin:
+    image: openzipkin/zipkin
+    container_name: zipkin
+    ports:
+      - 9411:9411
+    environment:
+      - STORAGE_TYPE=mem  # You can change the storage type as needed
+    restart: unless-stopped
