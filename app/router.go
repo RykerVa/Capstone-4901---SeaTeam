@@ -44,7 +44,7 @@ func (sr *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Invalid endpoint index", http.StatusBadRequest)
 			return
 		}
-		backendURL := sr.determineBackendURL(r, endpointIndex)
+		backendURL := sr.determineBackendURL(r, endpointIndex, sr.LoadBalancer)
 		if backendURL == "" {
 			http.NotFound(w, r)
 			return
@@ -62,7 +62,7 @@ func (sr *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // determineBackendURL determines the backend URL based on the request.
-func (sr *Router) determineBackendURL(r *http.Request, endpointIndex int) string {
+func (sr *Router) determineBackendURL(r *http.Request, endpointIndex int, lb loadbalancer.LoadBalancer) string {
 	// Extract the URL path from the request
 	urlPath := r.URL.Path
 
@@ -77,21 +77,37 @@ func (sr *Router) determineBackendURL(r *http.Request, endpointIndex int) string
 
 			// Check if the suffix is empty or starts with a "/"
 			if suffix == "" || strings.HasPrefix(suffix, "/") {
-				port := sr.Config.StaticResources.Clusters[0].LoadAssignment.Endpoints[0].LbEndpoints[endpointIndex].Endpoint.Address.SocketAddress.PortValue
-				address := sr.Config.StaticResources.Clusters[0].LoadAssignment.Endpoints[0].LbEndpoints[endpointIndex].Endpoint.Address.SocketAddress.Address
+				// Check the type of the load balancer
+				switch lb := lb.(type) {
+				case *loadbalancer.LeastConnectionsLoadBalancer:
+					port := sr.Config.StaticResources.Clusters[0].LoadAssignment.Endpoints[0].LbEndpoints[endpointIndex].Endpoint.Address.SocketAddress.PortValue
+					address := sr.Config.StaticResources.Clusters[0].LoadAssignment.Endpoints[0].LbEndpoints[endpointIndex].Endpoint.Address.SocketAddress.Address
 
-				// Include the retrieved port and address in the backend URL
-				backendURL := fmt.Sprintf("http://%s:%d/%s", address, port, suffix)
-				fmt.Println("Determined backend URL:", backendURL)
-				return backendURL
+					// Include the retrieved port and address in the backend URL
+					backendURL := fmt.Sprintf("http://%s:%d/%s", address, port, suffix)
+					backendURL2 := strings.TrimSuffix(backendURL, "/")
+					lb.UpdateConnectionCount(backendURL2)
+					fmt.Println("Determined backend URL:", backendURL)
+					return backendURL
+
+				case *loadbalancer.RoundRobinLoadBalancer:
+					// Use round-robin logic to get the next backend URL
+					backendURL := lb.NextEndpoint()
+					fmt.Println("Determined backend URL:", backendURL)
+					return backendURL
+
+				default:
+					// Handle the case where lb is not of the expected types
+					return ""
+				}
 			}
 		}
 	}
 
 	return ""
 }
-//Good ^
 
+//Good ^
 
 // forwardRequest forwards the HTTP request to the backend service.
 func forwardRequest(w http.ResponseWriter, r *http.Request, backendURL string) {

@@ -18,5 +18,4 @@ scrape_configs:
   scheme: http
   static_configs:
   - targets:
-    - localhost:9090
-    - node-exporter:9100
+    - app:8081
