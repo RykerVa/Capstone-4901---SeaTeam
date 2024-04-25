@@ -5,3 +5,6 @@ datasources:
   type: prometheus
   url: http://prometheus:9090
   isDefault: true
+- name: Zipkin
+  type: zipkin
+  url: http://zipkin:9411
