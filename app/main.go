@@ -10,13 +10,59 @@ import (
 	"syscall"
 	"time"
 
+	//"github.com/fsnotify/fsnotify"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	// Import the necessary OpenTelemetry packages
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/zipkin"
+	"go.opentelemetry.io/otel/sdk/resource"
+	"go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
+	
 	api "seateam/api"
 	config "seateam/config"
 	loadbalancer "seateam/loadbalancer"
 )
+
+func traceMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tracer := otel.Tracer("myApp")
+		ctx, span := tracer.Start(r.Context(), "http.request")
+		// Set attributes after starting the span
+		span.SetAttributes(
+			attribute.String("method", r.Method),
+			attribute.String("path", r.URL.Path),
+		)
+		defer span.End()
+
+		// Continue with the request
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func initTracing() {
+	// Configure the Zipkin exporter to send traces to a Zipkin backend
+	exporter, err := zipkin.New("http://zipkin:9411/api/v2/spans")
+	if err != nil {
+		log.Fatalf("Failed to create Zipkin exporter: %v", err)
+	}
+
+	// Create a new tracer provider with a batch span processor and the Zipkin exporter
+	tp := trace.NewTracerProvider(
+		trace.WithBatcher(exporter),
+		// Add a resource to the tracer provider to identify this application
+		trace.WithResource(resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceNameKey.String("SeaTeamSVC"),
+		)),
+	)
+
+	// Set the created tracer provider as the global provider
+	otel.SetTracerProvider(tp)
+}
 
 var (
 	// Counter for each endpoint
@@ -60,6 +106,8 @@ func incrementTotalEndpoints(count int) {
 }
 
 func main() {
+
+	initTracing()
 	// Handler for the first endpoint (listening on port 1234)
 	mux1 := http.NewServeMux()
 	mux1.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -321,12 +369,6 @@ func main() {
 		r.Config = configuration
 	})*/
 
-	// Serve the API endpoints
-	http.Handle("/", r)
-	http.HandleFunc("/health", api.HealthCheckHandler)
-	http.HandleFunc("/endpoint1", api.Endpoint1Handler)
-	http.HandleFunc("/endpoint2", api.Endpoint2Handler)
-
 	http.HandleFunc("/reload-config", func(w http.ResponseWriter, rq *http.Request) {
 		log.Println("Reloading configuration...")
 		configuration, backendServers = loadConfig()
@@ -350,6 +392,11 @@ func main() {
 
 		fmt.Fprintln(w, "Configuration reloaded.")
 	})
+
+	http.Handle("/", traceMiddleware(r))
+	http.Handle("/health", traceMiddleware(http.HandlerFunc(api.HealthCheckHandler)))
+	http.Handle("/endpoint1", traceMiddleware(http.HandlerFunc(api.Endpoint1Handler)))
+	http.Handle("/endpoint2", traceMiddleware(http.HandlerFunc(api.Endpoint2Handler)))
 
 	// Serve frontend files
 	fs := http.FileServer(http.Dir("./frontend"))
