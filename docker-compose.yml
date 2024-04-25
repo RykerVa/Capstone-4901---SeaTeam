@@ -37,3 +37,12 @@ services:
     restart: unless-stopped
     expose:
       - 9100
+
+  zipkin:
+    image: openzipkin/zipkin
+    container_name: zipkin
+    ports:
+      - 9411:9411
+    environment:
+      - STORAGE_TYPE=mem  # You can change the storage type as needed
+    restart: unless-stopped
